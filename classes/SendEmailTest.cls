@@ -35,7 +35,7 @@ Global class SendEmailTest {
         );
         insert con; 
         
-        
+        string subjecttouse = 'subject';
 
     
         //CREATE SINGLE EMAIL
@@ -43,7 +43,7 @@ Global class SendEmailTest {
         //request.RelatedToId = acc.id;
         //request.ContactorLeadID = con.id;
         request.ToAddresses ='test@test.com';
-		request.Subject = 'subject';
+		request.Subject = subjecttouse;
 		request.plainTextBody = 'body';
         request.EmailTemplateName ='unique_name_testclasstest';
         request.OrgWideEmailAddress = 'test@test.com';
@@ -51,9 +51,13 @@ Global class SendEmailTest {
         List<SendEmail.InvokeSendEmail> requests = new List<SendEmail.InvokeSendEmail>{ request };
             
         Test.startTest();    
-        SendEmail.Sendemail( requests );
+        	SendEmail.Sendemail( requests );
+            Integer invocations = Limits.getEmailInvocations();
         Test.stopTest();  
         
+         system.assertEquals(1, invocations, 'An email should be sent');
+            
+                    
         }
     }
 
