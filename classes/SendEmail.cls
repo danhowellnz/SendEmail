@@ -33,14 +33,14 @@ Global without sharing  class SendEmail {
         Global  String HtmlBody;
         @InvocableVariable(label='OrgWideEmailAddress' description='' required=false)
         Global  String OrgWideEmailAddress;
-        @InvocableVariable(label='setTreatTargetObjectAsRecipient' description='' required=false)
 
+        @InvocableVariable(label='setTreatTargetObjectAsRecipient' description='' required=false)
         Global  Boolean TreatBodiesAsTemplate;
-        @InvocableVariable(label='Attachment - ContentDocument' description='' required=false)
+        @InvocableVariable(label='Attachment - ContentDocument' description='ContentDocumentId' required=false)
         Global  String ContentDocumentId;
-        @InvocableVariable(label='Attachment - ContentVersion' description='' required=false)
+        @InvocableVariable(label='Attachment - ContentVersion' description='ContentVersionId' required=false)
         Global  String ContentVersionId;
-        @InvocableVariable(label='SaveAsActivity' description='' required=false)
+        @InvocableVariable(label='Save As Activity' description='' required=false)
         Global  Boolean SaveAsActivity;
         
     }    
