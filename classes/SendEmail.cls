@@ -1,4 +1,6 @@
 Global without sharing  class SendEmail {
+    public class applicationException extends Exception {}
+    
     
     // defines the input parameters of this flow element in the canvas designer
     Global class InvokeSendEmail {
@@ -13,7 +15,7 @@ Global without sharing  class SendEmail {
         @InvocableVariable(label='Email Template Unique Name' description='API Name  -- Contact/Lead/User ID required if you use this' required=false)
         Global  String EmailTemplateName;  
         
-        //
+        
         //Optional
         @InvocableVariable(label='ToAddresses' description='' required=false)
         Global  String ToAddresses;
@@ -34,7 +36,9 @@ Global without sharing  class SendEmail {
         @InvocableVariable(label='OrgWideEmailAddress' description='' required=false)
         Global  String OrgWideEmailAddress;
 
-        @InvocableVariable(label='setTreatTargetObjectAsRecipient' description='' required=false)
+        @InvocableVariable(label='TreatTargetObjectAsRecipient' description='' required=false)
+        Global  Boolean TreatTargetObjectAsRecipient;
+         @InvocableVariable(label='TreatBodiesAsTemplate' description='' required=false)
         Global  Boolean TreatBodiesAsTemplate;
         @InvocableVariable(label='Attachment - ContentDocument' description='ContentDocumentId' required=false)
         Global  String ContentDocumentId;
@@ -57,17 +61,35 @@ Global without sharing  class SendEmail {
           			//Empty var
                     Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
           			system.debug('request: '+request);
-          		
+ 
+          
+                    //If no value - ie. no email - then remove it back to null
+                    if(request.ccAddresses != null && !request.ccAddresses.contains('@'))	request.ccAddresses=null;
+          			if(request.bccAddresses != null && !request.bccAddresses.contains('@'))	request.bccAddresses=null;
+          			if(request.ToAddresses != null && !request.ToAddresses.contains('@'))	request.ToAddresses=null;
+          
           			//Create arrays
-          			String[] bccAddressesSplit = request.bccAddresses == null ? null : request.bccAddresses.split(',');
-          			String[] ccAddressesSplit = request.ccAddresses == null ? null :request.ccAddresses.split(',');
-          			String[] ToAddressesSplit = request.ToAddresses == null ? null :request.ToAddresses.split(',');			
+          			String[] bccAddressesSplit = request.bccAddresses == null 	? null : request.bccAddresses.split(',');
+          			String[] ccAddressesSplit = request.ccAddresses == null 	? null : request.ccAddresses.split(',');
+          			String[] ToAddressesSplit = request.ToAddresses == null 	? null : request.ToAddresses.split(',');			
           			
                       If( request.EmailTemplateId == null && request.EmailTemplateName !=null){
                           system.debug('SENDEMAIL___unique email template name: '+request.EmailTemplateName);
-                          ID EmailTemplateId = [select id,DeveloperName from EmailTemplate where DeveloperName = :request.EmailTemplateName limit 1].Id; 
-                          system.debug('SENDEMAIL___Found from unique email template id: '+EmailTemplateId);
-                          request.EmailTemplateId = EmailTemplateId;
+                          list<EmailTemplate> EmailTemplateList = [Select UiType, TemplateType, TemplateStyle, Name, Id, DeveloperName From EmailTemplate where 
+                                                                   (DeveloperName = :request.EmailTemplateName 
+                                                                   OR Name = :request.EmailTemplateName 
+                                                                   )
+                                                                   limit 1]; 
+                          
+                          if(EmailTemplateList.size()>0){
+                              system.debug('SENDEMAIL___Found from unique email template id: '+EmailTemplateList[0].Id);
+                              request.EmailTemplateId = EmailTemplateList[0].Id;
+                          }else{
+                              //create error nothing found
+                               System.debug('No email template id is found ');
+                               throw new applicationException('No email template id is found with the name: '+request.EmailTemplateName);
+                          }
+                          
                       }
           			
           
@@ -76,21 +98,29 @@ Global without sharing  class SendEmail {
                     if(request.RelatedToId != null) 			mail.setWhatId(request.RelatedToId);
           			//Someone to send to 
           			if(request.ContactorLeadID != null)  		mail.setTargetObjectId(request.ContactorLeadID);
-                    if(ToAddressessplit != null) 				mail.setToAddresses( ToAddressessplit);
+                    if(ToAddressessplit != null && ToAddressessplit.size()>0 )
+                        										mail.setToAddresses( ToAddressessplit);
           			//An email template
                     if(request.EmailTemplateId != null) 		mail.setTemplateId(request.EmailTemplateId);
           
           			//Optional Parameters
                     if(request.UseSignature != null) 			mail.setUseSignature(request.UseSignature);
-          			if(request.bccAddresses != null) 			mail.setBccAddresses(bccAddressessplit);
-          			if(request.ccAddresses != null) 			mail.setCcAddresses(ccAddressessplit);
+          			if(request.bccAddresses != null	 && bccAddressessplit.size()>0)
+                        										mail.setBccAddresses(bccAddressessplit);
+          			if(request.ccAddresses != null && ccAddressessplit.size()>0)
+                        										mail.setCcAddresses(ccAddressessplit);
                     //if(request.parentMessageIds != null)		mail.setInReplyTo(request.parentMessageIds);
                     if(request.emailOptOutPolicy != null)		mail.setOptOutPolicy(request.emailOptOutPolicy) ;   
-                    if(request.subject != null) 				mail.setSubject(request.subject);
-                    if(request.plainTextBody  != null) 			mail.setplainTextBody(request.plainTextBody );  
-          			if(request.HtmlBody  != null) 				mail.setHtmlBody(request.HtmlBody );
+          			if(request.TreatTargetObjectAsRecipient  != null) 	mail.setTreatTargetObjectAsRecipient(request.TreatTargetObjectAsRecipient );  
+          
+          				//these fields don't work if they have an emailtemplateid
+                    if(request.subject != null && request.EmailTemplateId == null) 					mail.setSubject(request.subject);
+                    if(request.plainTextBody  != null&& request.EmailTemplateId == null) 			mail.setplainTextBody(request.plainTextBody );  
+          			if(request.HtmlBody  != null&& request.EmailTemplateId == null) 				mail.setHtmlBody(request.HtmlBody );
+          
           			//if(request.references  != null) 			mail.setReferences(request.references );			
-          			if(request.TreatBodiesAsTemplate  != null) 	mail.setTreatBodiesAsTemplate(request.TreatBodiesAsTemplate );  
+          			if(request.TreatBodiesAsTemplate  != null) 	mail.setTreatTargetObjectasRecipient(request.TreatBodiesAsTemplate );  
+          			
           			if(request.OrgWideEmailAddress  != null){
                         OrgWideEmailAddress[] OrgWideEmail = [select Id from OrgWideEmailAddress where Address = :request.OrgWideEmailAddress ];
                      	if(OrgWideEmail.size()>0) 				mail.setOrgWideEmailAddressId(OrgWideEmail[0].Id);                       
