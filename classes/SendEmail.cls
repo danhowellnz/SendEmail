@@ -13,7 +13,7 @@ Global without sharing  class SendEmail {
         @InvocableVariable(label='Email Template Unique Name' description='API Name  -- Contact/Lead/User ID required if you use this' required=false)
         Global  String EmailTemplateName;  
         
-        
+        //
         //Optional
         @InvocableVariable(label='ToAddresses' description='' required=false)
         Global  String ToAddresses;
