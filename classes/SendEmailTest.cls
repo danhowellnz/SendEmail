@@ -29,6 +29,8 @@ global class SendEmailTest {
 			);
 			insert con;
 
+			Case cas = new Case(status = 'new');
+			insert cas;
 			ContentVersion cv = new ContentVersion(
 				Title = 'Test',
 				PathOnClient = 'Test.txt',
@@ -86,9 +88,10 @@ global class SendEmailTest {
 		request.bccAddresses = 'test@test.com';
 		request.ccAddresses = 'test@test.com';
 		request.UseSignature = false;
-		//request.ContentDocumentId  = theContentVersions[0].ContentDocumentId;
-		request.ContentVersionId = CVtext;
-		//request.AttachmentIds = new List<Id>{ theAttachment.Id };
+		request.ContentVersionId = String.join(
+			new List<Id>(new Map<Id, ContentVersion>(theContentVersions).keySet()),
+			','
+		);
 		request.apexErrorEmail = 'test@test.com';
 
 		Test.startTest();
@@ -98,6 +101,7 @@ global class SendEmailTest {
 
 		Test.stopTest();
 
+		System.assert(SendEmail.apexErrors.isEmpty(), 'We expect no errors');
 		System.assertEquals(1, [SELECT COUNT() FROM Task] - taskCount, 'We expect a task not to be raised');
 		System.assertEquals(1, invocations, 'We expect an email to be sent');
 	}
@@ -137,6 +141,7 @@ global class SendEmailTest {
 
 		Test.stopTest();
 
+		System.assert(SendEmail.apexErrors.isEmpty(), 'We expect no errors');
 		System.assertEquals(1, [SELECT COUNT() FROM Task] - taskCount, 'We expect a task not to be raised');
 		System.assertEquals(1, invocations, 'We expect an email to be sent');
 	}
@@ -166,6 +171,7 @@ global class SendEmailTest {
 
 		Test.stopTest();
 
+		System.assert(SendEmail.apexErrors.isEmpty(), 'We expect no errors');
 		System.assertEquals(1, [SELECT COUNT() FROM Task] - taskCount, 'We expect a task not to be raised');
 		System.assertEquals(1, invocations, 'We expect an email to be sent');
 	}
@@ -205,6 +211,48 @@ global class SendEmailTest {
 
 		Test.stopTest();
 
+		System.assert(SendEmail.apexErrors.isEmpty(), 'We expect no errors');
+		System.assertEquals(1, [SELECT COUNT() FROM Task] - taskCount, 'We expect a task not to be raised');
+		System.assertEquals(1, invocations, 'We expect an email to be sent');
+	}
+
+	@IsTest
+	static void testSendEmailSuccess_checkthreading() {
+		// Get the data
+		Account theAccount = [SELECT Id FROM Account LIMIT 1];
+		Contact theContact = [SELECT Id FROM Contact LIMIT 1];
+		case thecase = [SELECT id FROM case LIMIT 1];
+		List<ContentVersion> theContentVersions = [SELECT Id, ContentDocumentId FROM ContentVersion LIMIT 2];
+		Attachment theAttachment = [SELECT Id FROM Attachment LIMIT 1];
+
+		// Check the amount of tasks we have before our test
+		Integer taskCount = [SELECT COUNT() FROM Task];
+
+		// Create a single email to send
+		SendEmail.InvokeSendEmail request = new SendEmail.InvokeSendEmail();
+		request.Subject = 'test';
+		request.plainTextBody = 'body';
+		request.HtmlBody = 'body';
+		request.RelatedToId = theAccount.id;
+		request.ContactOrLeadID = theContact.id;
+		request.TreatTargetObjectAsRecipient = true;
+		request.ToAddresses = 'test@test.com';
+		request.bccAddresses = 'test@test.com';
+		request.ccAddresses = 'test@test.com';
+		request.UseSignature = false;
+		request.ContentDocumentId = theContentVersions[0].ContentDocumentId;
+		request.ContentVersionId = theContentVersions[1].Id;
+		request.AttachmentIds = new List<Id>{ theAttachment.Id };
+		request.apexErrorEmail = 'test@test.com';
+		request.caseId = thecase.Id;
+		Test.startTest();
+
+		SendEmail.SendEmail(new List<SendEmail.InvokeSendEmail>{ request });
+		Integer invocations = Limits.getEmailInvocations();
+
+		Test.stopTest();
+
+		System.assert(SendEmail.apexErrors.isEmpty(), 'We expect no errors');
 		System.assertEquals(1, [SELECT COUNT() FROM Task] - taskCount, 'We expect a task not to be raised');
 		System.assertEquals(1, invocations, 'We expect an email to be sent');
 	}
@@ -293,6 +341,7 @@ global class SendEmailTest {
 
 		// Should fail to send email and have two tasks, one for original email, second for failure
 
+		System.assert(!SendEmail.apexErrors.isEmpty(), 'We expect errors');
 		System.assertEquals(2, [SELECT COUNT() FROM Task] - taskCount, 'We expect a task not to be raised');
 		System.assertEquals(2, invocations, 'We expect an email to be sent');
 	}
@@ -337,6 +386,7 @@ global class SendEmailTest {
 
 		// Should fail at [No Email Template Id could be found with the name]
 
+		System.assert(!SendEmail.apexErrors.isEmpty(), 'We expect errors');
 		System.assertEquals(1, [SELECT COUNT() FROM Task] - taskCount, 'We expect a task to be raised');
 		System.assertEquals(1, invocations, 'We expect an email to be sent');
 	}
@@ -379,6 +429,7 @@ global class SendEmailTest {
 
 		// Should fail at [No Contact or Lead could be found with the Id]
 
+		System.assert(!SendEmail.apexErrors.isEmpty(), 'We expect errors');
 		System.assertEquals(
 			0,
 			[SELECT COUNT() FROM Task] - taskCount,
@@ -420,6 +471,7 @@ global class SendEmailTest {
 
 		// Should fail at [No Content Version could be found with the ContentDocumentId]
 
+		System.assert(!SendEmail.apexErrors.isEmpty(), 'We expect errors');
 		System.assertEquals(1, [SELECT COUNT() FROM Task] - taskCount, 'We expect a task to be raised');
 		System.assertEquals(1, invocations, 'We expect an email to be sent');
 	}
@@ -457,6 +509,7 @@ global class SendEmailTest {
 
 		// Should fail at [No Content Version could be found with the Id]
 
+		System.assert(!SendEmail.apexErrors.isEmpty(), 'We expect errors');
 		System.assertEquals(1, [SELECT COUNT() FROM Task] - taskCount, 'We expect a task to be raised');
 		System.assertEquals(1, invocations, 'We expect an email to be sent');
 	}
@@ -497,6 +550,7 @@ global class SendEmailTest {
 
 		// Should fail at [No Attachment could be found with the Id]
 
+		System.assert(!SendEmail.apexErrors.isEmpty(), 'We expect errors');
 		System.assertEquals(1, [SELECT COUNT() FROM Task] - taskCount, 'We expect a task to be raised');
 		System.assertEquals(1, invocations, 'We expect an email to be sent');
 	}

@@ -15,6 +15,8 @@ global without sharing class SendEmail {
 		)
 		global Id EmailTemplateId;
 
+		@InvocableVariable(label='Case ID' description='Case ID if you want to have threaded emails' required=false)
+		global Id caseId;
 		@InvocableVariable(
 			label='Body - Template Unique Name'
 			description='API Name -- Contact/Lead ID required if you use this'
@@ -70,14 +72,18 @@ global without sharing class SendEmail {
 		)
 		global String ContentVersionId;
 
-		@InvocableVariable(label='Attachment - Comma Seperated Ids' description='List of Attachment Ids' required=false)
+		@InvocableVariable(
+			label='Attachment - String Collection of Ids'
+			description='List of Attachment Ids'
+			required=false
+		)
 		global List<Id> AttachmentIds;
 
-		@InvocableVariable(label='Save As Activity' description='' required=false)
+		@InvocableVariable(label='Setting - Save As Activity' description='' required=false)
 		global Boolean SaveAsActivity;
 
 		@InvocableVariable(
-			label='Apex Error Email'
+			label='Setting - Apex Error Email'
 			description='Send an email to the specified address containing all errors'
 			required=false
 		)
@@ -304,6 +310,15 @@ global without sharing class SendEmail {
 				System.debug('SendEmail bccAddressesSplit: ' + bccAddressesSplit);
 
 				// Set the related Id
+				//remove if lead or contact
+				if (String.isNotBlank(request.RelatedToId)) {
+					if (
+						string.valueof(request.RelatedToId).startsWithIgnoreCase('00Q') ||
+						string.valueof(request.RelatedToId).startsWithIgnoreCase('003')
+					) {
+						request.RelatedToId = null;
+					}
+				}
 				if (String.isNotBlank(request.RelatedToId))
 					mail.setWhatId(request.RelatedToId);
 
@@ -339,6 +354,11 @@ global without sharing class SendEmail {
 						} else
 							mail.setTreatTargetObjectasRecipient(true);
 					}
+					if (
+						request.TreatTargetObjectAsRecipient == false &&
+						String.isnotBlanK(contactOrLeadEmailsById.get(request.ContactOrLeadID))
+					)
+						mail.setTreatTargetObjectasRecipient(false);
 				}
 				if (!ToAddressesSplit.isEmpty()) {
 					mail.setToAddresses(ToAddressesSplit);
@@ -491,6 +511,16 @@ global without sharing class SendEmail {
 					if (!fileAttachments.isEmpty()) {
 						mail.setFileAttachments(fileAttachments);
 					}
+				}
+
+				// if case threading is desired
+				if (request.caseId != null) {
+					System.debug('SendEmail threading with caseid: ' + request.caseId);
+
+					//Get the threading message identifier
+					String messageId = Cases.generateThreadingMessageId(request.caseId);
+					//Insert the message identifier into the References header
+					mail.setReferences(messageId);
 				}
 
 				// Add the email to the list of emails to be sent
