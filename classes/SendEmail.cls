@@ -1,4 +1,7 @@
 global without sharing class SendEmail {
+	//hangover from a darker time
+	global static List<String> apexErrors = new List<String>();
+
 	// Defines the input parameters of this Flow Element in the Canvas Designer
 	global class InvokeSendEmail {
 		// Required
@@ -111,20 +114,18 @@ global without sharing class SendEmail {
 		// Set of Contact or Lead Ids to query
 		Set<String> contactOrLeadIds = new Set<String>();
 
+		set<id> allIds = new Set<id>();
 		// Set of Content Document Ids to query
-		Set<String> contentDocumentIds = new Set<String>();
+		Set<ID> contentDocumentIds = new Set<ID>();
 
 		// Set of Content Version Ids to query
-		Set<String> contentVersionIds = new Set<String>();
+		Set<ID> contentVersionIds = new Set<ID>();
 
 		// Set of Attachment Ids to query
-		Set<String> attachmentIds = new Set<String>();
+		Set<id> attachmentIds = new Set<id>();
 
 		// Initiate a variable to get the apex error email
 		String apexErrorEmail = requests[0].apexErrorEmail;
-
-		// Keep a list of all errors if we need to send them
-		List<String> apexErrors = new List<String>();
 
 		// For each email
 		for (InvokeSendEmail request : requests) {
@@ -142,15 +143,42 @@ global without sharing class SendEmail {
 			}
 			// Get the Content Document Ids
 			if (String.isNotBlank(request.ContentDocumentId)) {
-				contentDocumentIds.addAll(request.ContentDocumentId.split(','));
+				List<string> docIds = request.ContentDocumentId.split(',');
+				for (string docid : docIds) {
+					allids.add(id.valueOf(docid));
+				}
 			}
 			// Get the Content Version Ids
 			if (String.isNotBlank(request.ContentVersionId)) {
-				contentVersionIds.addAll(request.ContentVersionId.split(','));
+				List<string> docIds = request.ContentVersionId.split(',');
+				for (string docid : docIds) {
+					allids.add(id.valueOf(docid));
+				}
 			}
 			// Get the Attachment Ids
 			if (request.AttachmentIds != null && !request.AttachmentIds.isEmpty()) {
-				attachmentIds.addAll((List<String>) request.AttachmentIds);
+				allids.addAll(request.AttachmentIds);
+			}
+		}
+		//because who knows what was actually passed in, lets ask salesforce.
+		for (id currentId : allIds) {
+			switch on currentId.getSObjectType().getDescribe().getName() {
+				when 'Attachment' {
+					attachmentIds.add(currentId);
+				}
+				when 'ContentVersion' {
+					contentVersionIds.add(currentId);
+				}
+				when 'ContentDocument' {
+					contentDocumentIds.add(currentId);
+				}
+				when else {
+					apexErrors.add(
+						'Didn\'t expect attachment of type ' +
+						currentId.getSObjectType().getDescribe().getName() +
+						'. Please reach out to have this added if required.'
+					);
+				}
 			}
 		}
 
@@ -219,7 +247,7 @@ global without sharing class SendEmail {
 		}
 
 		// Map of Content Version by it's Id, ContentDocumentId or AttachmentId
-		Map<String, ContentVersion> contentVersionsById = new Map<String, ContentVersion>();
+		Map<ID, ContentVersion> contentVersionsById = new Map<ID, ContentVersion>();
 
 		// If we have Content Documents or Content Versions to query
 		if (!contentDocumentIds.isEmpty() || !contentVersionIds.isEmpty()) {
@@ -333,32 +361,29 @@ global without sharing class SendEmail {
 						throw new SendEmailException(
 							'No Contact or Lead could be found with the Id: ' + request.ContactOrLeadID
 						);
-					} else
-						mail.setTargetObjectId(request.ContactOrLeadID);
-
-					if (request.TreatTargetObjectAsRecipient == null)
-						request.TreatTargetObjectAsRecipient = true;
-
-					if (request.TreatTargetObjectAsRecipient == true) {
-						// Make sure we have an email
-						if (String.isBlanK(contactOrLeadEmailsById.get(request.ContactOrLeadID))) {
-							// Create error no email
-							System.debug(
-								'SendEmail No Contact or Lead email address could be found with the Id: ' +
-								request.ContactOrLeadID
+					} else {
+						if (String.isBlank(contactOrLeadEmailsById.get(request.ContactOrLeadID))) {
+							//create error becaase we wanted to set the target object as recipient but there isn't an email for them.
+							if (request.TreatTargetObjectAsRecipient == true) {
+								System.debug(
+									'SendEmail No Contact or Lead email address could be found with the Id: ' +
+									request.ContactOrLeadID
+								);
+								throw new SendEmailException(
+									'No Contact or Lead email address could be found with the Id: ' +
+									request.ContactOrLeadID
+								);
+							}
+							mail.setTreatTargetObjectasRecipient(false);
+						} else {
+							mail.setTreatTargetObjectasRecipient(
+								request.TreatTargetObjectAsRecipient != null
+									? request.TreatTargetObjectAsRecipient
+									: true
 							);
-							throw new SendEmailException(
-								'No Contact or Lead email address could be found with the Id: ' +
-								request.ContactOrLeadID
-							);
-						} else
-							mail.setTreatTargetObjectasRecipient(true);
+							mail.setTargetObjectId(request.ContactOrLeadID);
+						}
 					}
-					if (
-						request.TreatTargetObjectAsRecipient == false &&
-						String.isnotBlanK(contactOrLeadEmailsById.get(request.ContactOrLeadID))
-					)
-						mail.setTreatTargetObjectasRecipient(false);
 				}
 				if (!ToAddressesSplit.isEmpty()) {
 					mail.setToAddresses(ToAddressesSplit);
@@ -413,7 +438,7 @@ global without sharing class SendEmail {
 				if (
 					String.isNotBlank(request.ContentDocumentId) ||
 					String.isNotBlank(request.ContentVersionId) ||
-					request.AttachmentIds != null
+					(request.AttachmentIds != null && !request.AttachmentIds.isEmpty())
 				) {
 					// Init a list for file attacments
 					Messaging.EmailFileAttachment[] fileAttachments = new List<Messaging.EmailFileAttachment>{};
@@ -423,9 +448,9 @@ global without sharing class SendEmail {
 						for (String contentDocumentId : request.ContentDocumentId.split(',')) {
 							System.debug('SendEmail contentDocumentId: ' + contentDocumentId);
 							// If we have a File with this Id
-							if (contentVersionsById.containsKey(contentDocumentId)) {
+							if (contentVersionsById.containsKey(id.valueOf(contentDocumentId))) {
 								// Get the file
-								ContentVersion file = contentVersionsById.get(contentDocumentId);
+								ContentVersion file = contentVersionsById.get(id.valueOf(contentDocumentId));
 								// Create a file attachment
 								Messaging.EmailFileAttachment fileAttachment = new Messaging.EmailFileAttachment();
 								// Set the file name
@@ -434,16 +459,14 @@ global without sharing class SendEmail {
 								fileAttachment.setBody(file.VersionData);
 								// Add the file to the list
 								fileAttachments.add(fileAttachment);
-								System.debug('SendEmail ContentVersion: ' + contentVersionsById.get(contentDocumentId));
+								System.debug('SendEmail ContentVersion: ' + file);
 							} else {
 								// Create error nothing found
-								System.debug(
+								string err =
 									'SendEmail No Content Version could be found with the ContentDocumentId: ' +
-									contentDocumentId
-								);
-								throw new SendEmailException(
-									'No Content Version could be found with the ContentDocumentId: ' + contentDocumentId
-								);
+									contentDocumentId;
+								System.debug(err);
+								throw new SendEmailException(err);
 							}
 						}
 					}
@@ -453,9 +476,9 @@ global without sharing class SendEmail {
 						for (String contentVersionId : request.ContentVersionId.split(',')) {
 							System.debug('SendEmail contentVersionId: ' + contentVersionId);
 							// If we have a File with this Id
-							if (contentVersionsById.containsKey(contentVersionId)) {
+							if (contentVersionsById.containsKey(id.valueOf(contentVersionId))) {
 								// Get the file
-								ContentVersion file = contentVersionsById.get(contentVersionId);
+								ContentVersion file = contentVersionsById.get(id.valueOf(contentVersionId));
 								// Create a file attachment
 								Messaging.EmailFileAttachment fileAttachment = new Messaging.EmailFileAttachment();
 								// Set the file name
@@ -464,15 +487,13 @@ global without sharing class SendEmail {
 								fileAttachment.setBody(file.VersionData);
 								// Add the file to the list
 								fileAttachments.add(fileAttachment);
-								System.debug('SendEmail ContentVersion: ' + contentVersionsById.get(contentVersionId));
+								System.debug('SendEmail ContentVersion: ' + file);
 							} else {
 								// Create error nothing found
-								System.debug(
-									'SendEmail No Content Version could be found with the Id: ' + contentVersionId
-								);
-								throw new SendEmailException(
-									'No Content Version could be found with the Id: ' + contentVersionId
-								);
+								string err =
+									'SendEmail No Content Version could be found with the Id: ' + contentVersionId;
+								System.debug(err);
+								throw new SendEmailException(err);
 							}
 						}
 					}
@@ -493,16 +514,12 @@ global without sharing class SendEmail {
 								fileAttachment.setBody(file.VersionData);
 								// Add the file to the list
 								fileAttachments.add(fileAttachment);
-								System.debug(
-									'SendEmail ContentVersion (From Attachment): ' +
-									contentVersionsById.get(attachmentId)
-								);
+								System.debug('SendEmail ContentVersion (From Attachment): ' + file);
 							} else {
 								// Create error nothing found
-								System.debug('SendEmail No Attachment could be found with the Id: ' + attachmentId);
-								throw new SendEmailException(
-									'No Attachment could be found with the Id: ' + attachmentId
-								);
+								String err = 'SendEmail No Attachment could be found with the Id: ' + attachmentId;
+								System.debug(err);
+								throw new SendEmailException(err);
 							}
 						}
 					}
